@@ -15,6 +15,8 @@ FROM alpine:latest
 
 WORKDIR /app
 
+RUN apk --no-cache add tzdata
+
 COPY --from=builder /app/app .
 
 EXPOSE 9911
