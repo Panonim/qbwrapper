@@ -16,9 +16,11 @@ services:
     image: ghcr.io/panonim/qbwrapper:latest
     ports:
       - "9911:9911"
-    volumes:
-      - ./.env:/app/.env
     environment:
+      USERNAME: ${QB_USERNAME}
+      PASSWORD: ${QB_PASSWORD}
+      BASE_URL: ${QB_URL}
+      AUTH_TOKEN: ${AUTH_TOKEN}
       LISTEN_PORT: "9911"
     restart: unless-stopped
 ```
