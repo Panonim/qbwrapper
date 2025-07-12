@@ -20,6 +20,7 @@ var (
         username    string
         password    string
         authToken   string
+        debug       bool
         cache       []TorrentInfo
         cacheMutex  sync.RWMutex
         cacheExpiry time.Time
@@ -37,6 +38,12 @@ type TorrentInfo struct {
         ETA        int64   `json:"eta"`
 }
 
+func debugLog(format string, args ...interface{}) {
+        if debug {
+                log.Printf("[DEBUG] "+format, args...)
+        }
+}
+
 func login() error {
         jar, _ := cookiejar.New(nil)
         client = &http.Client{Jar: jar}
@@ -46,6 +53,9 @@ func login() error {
         form.Add("password", password)
 
         loginURL := strings.TrimRight(baseURL, "/") + "/api/v2/auth/login"
+        debugLog("Attempting login to: %s", loginURL)
+        debugLog("Login user: %s", username)
+
         resp, err := client.PostForm(loginURL, form)
         if err != nil {
                 return fmt.Errorf("login failed: %w", err)
@@ -53,6 +63,9 @@ func login() error {
         defer resp.Body.Close()
 
         body, _ := io.ReadAll(resp.Body)
+        debugLog("Login response status: %s", resp.Status)
+        debugLog("Login response body: %s", string(body))
+
         if string(body) != "Ok." {
                 return fmt.Errorf("login failed, response: %s", body)
         }
@@ -87,10 +100,14 @@ func fetchTorrentsOnce() ([]TorrentInfo, error) {
         }
         defer resp.Body.Close()
 
+        debugLog("fetchTorrentsOnce status: %s", resp.Status)
+
         if resp.StatusCode == http.StatusUnauthorized {
                 return nil, errUnauthorized
         }
         if resp.StatusCode != http.StatusOK {
+                body, _ := io.ReadAll(resp.Body)
+                debugLog("Non-OK response body: %s", string(body))
                 return nil, fmt.Errorf("failed to fetch torrents, status: %s", resp.Status)
         }
 
@@ -123,7 +140,10 @@ func parseTorrents(fullTorrents []map[string]interface{}) []TorrentInfo {
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
         return func(w http.ResponseWriter, r *http.Request) {
                 token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+                debugLog("Received Authorization token: %s", token)
+
                 if token != authToken {
+                        debugLog("Authorization failed")
                         http.Error(w, "Unauthorized", http.StatusUnauthorized)
                         return
                 }
@@ -204,6 +224,7 @@ func main() {
         username = os.Getenv("USERNAME")
         password = os.Getenv("PASSWORD")
         authToken = os.Getenv("AUTH_TOKEN")
+        debug = os.Getenv("DEBUG") == "true"
 
         if baseURL == "" || username == "" || password == "" || authToken == "" {
                 log.Fatal("Missing required environment variables")
