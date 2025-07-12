@@ -5,9 +5,11 @@ WORKDIR /app
 
 RUN apk --no-cache add git
 
-COPY . /app
-
+COPY go.mod ./
 RUN go mod tidy
+
+COPY main.go ./
+
 RUN go build -o app main.go
 
 # Final stage
