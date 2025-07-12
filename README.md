@@ -2,6 +2,11 @@
 
 This Go app acts as a lightweight proxy API for qBittorrent. It logs into your qBittorrent Web UI, fetches torrent info, caches it for 5 minutes, and exposes a simple authenticated HTTP endpoint to get torrent data in JSON format.
 
+<p>
+  <img alt="GitHub Tag" src="https://img.shields.io/github/v/tag/panonim/qbwrapper?style=for-the-badge">
+  <img src="https://img.shields.io/github/actions/workflow/status/Panonim/qbwrapper/docker-publish.yml?branch=main&label=Packaging&style=for-the-badge" style="margin-left:5px;">
+</p>
+
 # Setup - Standalone
 `docker-compose.yml`
 ```yaml
@@ -131,6 +136,11 @@ You **must** provide these in a `.env` file or your environment:
       {{ end }}
     {{ end }}
 ```
+
+<p>
+  <img src="./static/preview_1.png" width="300" style="margin-right: 10px;"/>
+  <img src="./static/preview_2.png" width="300"/>
+</p>
 
 ### Glance env
 You can put this app in the same place as glance and the same .env file, but in case you are using it alone please put this in your `.env`.
