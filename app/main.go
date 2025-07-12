@@ -2,6 +2,7 @@ package main
 
 import (
         "encoding/json"
+        "fmt"
         "io"
         "log"
         "net/http"
@@ -11,13 +12,13 @@ import (
         "strings"
         "sync"
         "time"
-
-        "github.com/joho/godotenv"
 )
 
 var (
         client      *http.Client
-        qbBaseURL   string
+        baseURL     string
+        username    string
+        password    string
         authToken   string
         cache       []TorrentInfo
         cacheMutex  sync.RWMutex
@@ -36,7 +37,7 @@ type TorrentInfo struct {
         ETA        int64   `json:"eta"`
 }
 
-func loginToQbittorrent(qbURL, username, password string) {
+func login() error {
         jar, _ := cookiejar.New(nil)
         client = &http.Client{Jar: jar}
 
@@ -44,23 +45,38 @@ func loginToQbittorrent(qbURL, username, password string) {
         form.Add("username", username)
         form.Add("password", password)
 
-        loginURL := strings.TrimRight(qbURL, "/") + "/api/v2/auth/login"
+        loginURL := strings.TrimRight(baseURL, "/") + "/api/v2/auth/login"
         resp, err := client.PostForm(loginURL, form)
         if err != nil {
-                log.Fatalf("Login failed: %v", err)
+                return fmt.Errorf("login failed: %w", err)
         }
         defer resp.Body.Close()
 
         body, _ := io.ReadAll(resp.Body)
         if string(body) != "Ok." {
-                log.Fatalf("Login failed, response: %s", body)
+                return fmt.Errorf("login failed, response: %s", body)
         }
 
         log.Println("qBittorrent login successful")
+        return nil
 }
 
 func fetchTorrents() ([]TorrentInfo, error) {
-        req, err := http.NewRequest("GET", qbBaseURL+"/api/v2/torrents/info", nil)
+        torrents, err := fetchTorrentsOnce()
+        if err == errUnauthorized {
+                log.Println("Session expired, re-logging in...")
+                if err = login(); err != nil {
+                        return nil, err
+                }
+                torrents, err = fetchTorrentsOnce()
+        }
+        return torrents, err
+}
+
+var errUnauthorized = fmt.Errorf("unauthorized")
+
+func fetchTorrentsOnce() ([]TorrentInfo, error) {
+        req, err := http.NewRequest("GET", baseURL+"/api/v2/torrents/info", nil)
         if err != nil {
                 return nil, err
         }
@@ -71,12 +87,23 @@ func fetchTorrents() ([]TorrentInfo, error) {
         }
         defer resp.Body.Close()
 
+        if resp.StatusCode == http.StatusUnauthorized {
+                return nil, errUnauthorized
+        }
+        if resp.StatusCode != http.StatusOK {
+                return nil, fmt.Errorf("failed to fetch torrents, status: %s", resp.Status)
+        }
+
         var fullTorrents []map[string]interface{}
         if err := json.NewDecoder(resp.Body).Decode(&fullTorrents); err != nil {
                 return nil, err
         }
 
-        var filtered []TorrentInfo
+        return parseTorrents(fullTorrents), nil
+}
+
+func parseTorrents(fullTorrents []map[string]interface{}) []TorrentInfo {
+        filtered := make([]TorrentInfo, 0, len(fullTorrents))
         for _, t := range fullTorrents {
                 filtered = append(filtered, TorrentInfo{
                         Name:       toString(t["name"]),
@@ -90,8 +117,7 @@ func fetchTorrents() ([]TorrentInfo, error) {
                         ETA:        toInt64(t["eta"]),
                 })
         }
-
-        return filtered, nil
+        return filtered
 }
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -124,7 +150,7 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
 
         torrents, err := fetchTorrents()
         if err != nil {
-                http.Error(w, "Failed to fetch torrents", http.StatusBadGateway)
+                http.Error(w, "Failed to fetch torrents: "+err.Error(), http.StatusBadGateway)
                 return
         }
 
@@ -174,20 +200,18 @@ func toFloat(i interface{}) float64 {
 }
 
 func main() {
-        if err := godotenv.Load(); err != nil {
-                log.Fatal("Error loading .env")
-        }
-
-        qbBaseURL = strings.TrimRight(os.Getenv("QB_URL"), "/")
-        username := os.Getenv("QB_USERNAME")
-        password := os.Getenv("QB_PASSWORD")
+        baseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
+        username = os.Getenv("USERNAME")
+        password = os.Getenv("PASSWORD")
         authToken = os.Getenv("AUTH_TOKEN")
 
-        if qbBaseURL == "" || username == "" || password == "" || authToken == "" {
-                log.Fatal("Missing required .env variables")
+        if baseURL == "" || username == "" || password == "" || authToken == "" {
+                log.Fatal("Missing required environment variables")
         }
 
-        loginToQbittorrent(qbBaseURL, username, password)
+        if err := login(); err != nil {
+                log.Fatalf("Initial login failed: %v", err)
+        }
 
         port := os.Getenv("LISTEN_PORT")
         if port == "" {
