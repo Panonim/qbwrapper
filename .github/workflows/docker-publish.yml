@@ -3,13 +3,14 @@ name: Build and Publish Docker Image
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+\.[0-9]+\.[0-9]+'
     branches:
       - unstable
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
 
