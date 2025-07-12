@@ -49,7 +49,7 @@ You **must** provide these in a `.env` file or your environment:
   title: qBittorrent
   cache: 15m
   options:
-    always-show-stats: true 
+    always-show-stats: false 
   subrequests:
     info:
       url: "http://${QB_URL}/qb/torrents"
@@ -75,15 +75,33 @@ You **must** provide these in a `.env` file or your environment:
         {{ if eq $state "allocating" }}{{ $icon = "⚙️" }}{{ end }}
         {{ if eq $state "checkingResumeData" }}{{ $icon = "♻️" }}{{ end }}
         {{ $name := $t.String "name" }}
+        {{ $shortName := $name }}
         {{ if gt (len $name) 20 }}
-          {{ $shortName := printf "%s..." (slice $name 0 20) }}
-        {{ else }}
-          {{ $shortName := $name }}
+          {{ $shortName = printf "%s..." (slice $name 0 20) }}
         {{ end }}
         {{ $progress := mul ($t.Float "progress") 100 }}
         {{ $downloaded := $t.Int "downloaded" }}
         {{ $size := $t.Int "size" }}
+        {{ $fmtDownloaded := "" }}
+        {{ $fmtSize := "" }}
+        {{ if gt $size 1073741824 }}
+          {{ $fmtDownloaded = printf "%.2f GB" (div (toFloat $downloaded) 1073741824) }}
+          {{ $fmtSize = printf "%.2f GB" (div (toFloat $size) 1073741824) }}
+        {{ else }}
+          {{ $fmtDownloaded = printf "%.2f MB" (div (toFloat $downloaded) 1048576) }}
+          {{ $fmtSize = printf "%.2f MB" (div (toFloat $size) 1048576) }}
+        {{ end }}
         {{ $eta := $t.Int "eta" }}
+        {{ $etaStr := "" }}
+        {{ if gt $eta 0 }}
+          {{ $h := div $eta 3600 }}
+          {{ $m := div (mod $eta 3600) 60 }}
+          {{ $etaStr = printf "%dh %dm" $h $m }}
+        {{ else if eq $eta 0 }}
+          {{ $etaStr = "0m" }}
+        {{ else }}
+          {{ $etaStr = "∞" }}
+        {{ end }}
         {{ $category := "None" }}
         {{ if and ($t.Exists "category") (ne ($t.String "category") "") }}
           {{ $category = $t.String "category" }}
@@ -96,27 +114,13 @@ You **must** provide these in a `.env` file or your environment:
         {{ if $t.Exists "num_seeds" }}
           {{ $numSeeds = $t.Int "num_seeds" }}
         {{ end }}
-        {{ $gbDownloaded := div (toFloat $downloaded) 1073741824 }}
-        {{ $gbSize := div (toFloat $size) 1073741824 }}
-        {{ $fmtDownloaded := printf "%.2f" $gbDownloaded }}
-        {{ $fmtSize := printf "%.2f" $gbSize }}
-        {{ $etaStr := "" }}
-        {{ if gt $eta 0 }}
-          {{ $h := div $eta 3600 }}
-          {{ $m := div (mod $eta 3600) 60 }}
-          {{ $etaStr = printf "%dh %dm" $h $m }}
-        {{ else if eq $eta 0 }}
-          {{ $etaStr = "0m" }}
-        {{ else }}
-          {{ $etaStr = "∞" }}
-        {{ end }}
         <div>
-          <h2 style="font-size: 1.2em;">{{ $icon }} {{ if gt (len $name) 20 }}{{ slice $name 0 20 }}...{{ else }}{{ $name }}{{ end }}</h2>
+          <h2 style="font-size: 1.2em;">{{ $icon }} {{ $shortName }}</h2>
           {{ if $alwaysShowStats }}
             <hr/>
             <div>
               <div>Progress: {{ printf "%.1f%%" $progress }}</div>
-              <div>Downloaded: {{ $fmtDownloaded }} GB / {{ $fmtSize }} GB</div>
+              <div>Downloaded: {{ $fmtDownloaded }} / {{ $fmtSize }}</div>
               <div>Category: {{ $category }}</div>
               <div>Leechs: {{ $numLeechs }}, Seeds: {{ $numSeeds }}</div>
               <div>ETA: {{ $etaStr }}</div>
