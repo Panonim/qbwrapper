@@ -8,7 +8,7 @@ RUN apk --no-cache add git
 COPY go.mod main.go ./
 RUN go mod tidy
 
-RUN go build -o app main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o app main.go
 
 # Final stage
 FROM alpine:latest
