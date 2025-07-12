@@ -2,18 +2,17 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches:
-      - main
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+    branches:
+      - unstable
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
 
       - uses: docker/setup-qemu-action@v2
 
@@ -23,14 +22,31 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.CR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v4
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
         with:
           context: ./app
           file: ./app/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/panonim/qbwrapper:latest
-            ghcr.io/panonim/qbwrapper:${{ github.ref_name }}
+          tags: ${{ steps.set-tags.outputs.tags }}
+
+    outputs:
+      image-tags: ${{ steps.set-tags.outputs.tags }}
+
+  set-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.set-tags.outputs.tags }}
+    steps:
+      - id: set-tags
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            echo "tags=ghcr.io/${GITHUB_REPOSITORY_OWNER}/qbwrapper:${TAG},ghcr.io/${GITHUB_REPOSITORY_OWNER}/qbwrapper:latest" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/heads/unstable ]]; then
+            echo "tags=ghcr.io/${GITHUB_REPOSITORY_OWNER}/qbwrapper:unstable-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+          else
+            echo "tags=" >> $GITHUB_OUTPUT
+          fi
