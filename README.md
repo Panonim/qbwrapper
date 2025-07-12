@@ -10,9 +10,9 @@ services:
     container_name: qbwrapper
     image: ghcr.io/panonim/qbwrapper:latest
     ports:
-      - "9090:9911"
-    env_file:
-      - .env
+      - "9911:9911"
+    volumes:
+      - ./.env:/app/.env
     environment:
       LISTEN_PORT: "9911"
     restart: unless-stopped
