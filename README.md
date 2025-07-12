@@ -48,7 +48,7 @@ You **must** provide these in a `.env` file or your environment:
     always-show-stats: true 
   subrequests:
     info:
-      url: "http://${QB_URL}/qb/torrents"   # your Go app endpoint
+      url: "http://${QB_URL}/qb/torrents"
       method: GET
       headers:
         Authorization: "Bearer ${AUTH_TOKEN}"  # your token
