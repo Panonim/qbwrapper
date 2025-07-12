@@ -21,11 +21,6 @@ services:
     environment:
       LISTEN_PORT: "9911"
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 ```
 `.env`
 ```env
