@@ -28,9 +28,9 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG=${GITHUB_REF#refs/tags/}
-            echo "tags=ghcr.io/${{ github.repository_owner }}/qbwrapper:${TAG},ghcr.io/${{ github.repository_owner }}/qbwrapper:latest" >> $GITHUB_OUTPUT
+            echo "tags=ghcr.io/panonim/qbwrapper:${TAG},ghcr.io/${{ github.repository_owner }}/qbwrapper:latest" >> $GITHUB_OUTPUT
           elif [[ "${GITHUB_REF}" == refs/heads/unstable ]]; then
-            echo "tags=ghcr.io/${{ github.repository_owner }}/qbwrapper:unstable-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+            echo "tags=ghcr.io/panonim/qbwrapper:unstable-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
           else
             echo "tags=" >> $GITHUB_OUTPUT
           fi
