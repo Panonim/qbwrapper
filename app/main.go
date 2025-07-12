@@ -15,15 +15,18 @@ import (
 )
 
 var (
-        client      *http.Client
-        baseURL     string
-        username    string
-        password    string
-        authToken   string
-        debug       bool
-        cache       []TorrentInfo
-        cacheMutex  sync.RWMutex
-        cacheExpiry time.Time
+        client           *http.Client
+        baseURL          string
+        username         string
+        password         string
+        authToken        string
+        debug            bool
+        cache            []TorrentInfo
+        cacheMutex       sync.RWMutex
+        cacheExpiry      time.Time
+        loginAttempts    int
+        loginBlockedUntil time.Time
+        loginMutex       sync.Mutex
 )
 
 type TorrentInfo struct {
@@ -45,6 +48,17 @@ func debugLog(format string, args ...interface{}) {
 }
 
 func login() error {
+        loginMutex.Lock()
+        defer loginMutex.Unlock()
+
+        debugLog("Login attempt started, current attempts: %d", loginAttempts)
+
+        if time.Now().Before(loginBlockedUntil) {
+                remainingTime := time.Until(loginBlockedUntil)
+                debugLog("Login blocked, remaining time: %v", remainingTime.Round(time.Minute))
+                return fmt.Errorf("login blocked for %v due to repeated failures", remainingTime.Round(time.Minute))
+        }
+
         jar, _ := cookiejar.New(nil)
         client = &http.Client{Jar: jar}
 
@@ -58,6 +72,15 @@ func login() error {
 
         resp, err := client.PostForm(loginURL, form)
         if err != nil {
+                loginAttempts++
+                debugLog("Login network error, attempt %d/3: %v", loginAttempts, err)
+                if loginAttempts >= 3 {
+                        loginBlockedUntil = time.Now().Add(30 * time.Minute)
+                        debugLog("Maximum login attempts reached, blocking until: %v", loginBlockedUntil)
+                        log.Printf("Login failed %d times, blocking for 30 minutes until %v", loginAttempts, loginBlockedUntil)
+                        loginAttempts = 0 
+                        return fmt.Errorf("login blocked for 30 minutes due to repeated failures")
+                }
                 return fmt.Errorf("login failed: %w", err)
         }
         defer resp.Body.Close()
@@ -67,9 +90,22 @@ func login() error {
         debugLog("Login response body: %s", string(body))
 
         if string(body) != "Ok." {
+                loginAttempts++
+                debugLog("Login authentication failed, attempt %d/3: %s", loginAttempts, string(body))
+                if loginAttempts >= 3 {
+                        loginBlockedUntil = time.Now().Add(30 * time.Minute)
+                        debugLog("Maximum login attempts reached, blocking until: %v", loginBlockedUntil)
+                        log.Printf("Login failed %d times, blocking for 30 minutes until %v", loginAttempts, loginBlockedUntil)
+                        loginAttempts = 0 
+                        return fmt.Errorf("login blocked for 30 minutes due to repeated failures")
+                }
                 return fmt.Errorf("login failed, response: %s", body)
         }
 
+        if loginAttempts > 0 {
+                debugLog("Login successful, resetting attempt counter from %d to 0", loginAttempts)
+        }
+        loginAttempts = 0
         log.Println("qBittorrent login successful")
         return nil
 }
@@ -102,7 +138,7 @@ func fetchTorrentsOnce() ([]TorrentInfo, error) {
 
         debugLog("fetchTorrentsOnce status: %s", resp.Status)
 
-        if resp.StatusCode == http.StatusUnauthorized {
+        if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
                 return nil, errUnauthorized
         }
         if resp.StatusCode != http.StatusOK {
