@@ -265,8 +265,13 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func torrentsHandler(w http.ResponseWriter, r *http.Request) {
+        now := time.Now()
+        
         cacheMutex.RLock()
-        if time.Now().Before(cacheExpiry) && cache != nil {
+        if now.Before(cacheExpiry) && cache != nil {
+                debugLog("Serving torrents from cache (expires at %v, %v remaining)", 
+                        cacheExpiry.Format("15:04:05"), 
+                        time.Until(cacheExpiry).Round(time.Second))
                 json.NewEncoder(w).Encode(cache)
                 cacheMutex.RUnlock()
                 return
@@ -276,19 +281,33 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
         cacheMutex.Lock()
         defer cacheMutex.Unlock()
 
-        if time.Now().Before(cacheExpiry) && cache != nil {
+        if now.Before(cacheExpiry) && cache != nil {
+                debugLog("Serving torrents from cache (double-check, expires at %v, %v remaining)", 
+                        cacheExpiry.Format("15:04:05"), 
+                        time.Until(cacheExpiry).Round(time.Second))
                 json.NewEncoder(w).Encode(cache)
                 return
         }
 
+        if cache == nil {
+                debugLog("Cache is empty, fetching fresh data from qBittorrent API")
+        } else {
+                debugLog("Cache expired at %v, fetching fresh data from qBittorrent API", cacheExpiry.Format("15:04:05"))
+        }
+
         torrents, err := fetchTorrents()
         if err != nil {
+                debugLog("Failed to fetch torrents from API: %v", err)
                 http.Error(w, "Failed to fetch torrents: "+err.Error(), http.StatusBadGateway)
                 return
         }
 
         cache = torrents
         cacheExpiry = time.Now().Add(5 * time.Minute)
+        
+        debugLog("Successfully fetched %d torrents from API, cached until %v", 
+                len(torrents), 
+                cacheExpiry.Format("15:04:05"))
 
         w.Header().Set("Content-Type", "application/json")
         json.NewEncoder(w).Encode(cache)
