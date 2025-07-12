@@ -23,6 +23,7 @@ services:
       BASE_URL: ${QB_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
       LISTEN_PORT: "9911"
+      RATE_LIMIT: "10"  # API requests per minute (default: 10)
     restart: unless-stopped
 ```
 `.env`
