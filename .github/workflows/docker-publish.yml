@@ -6,6 +6,8 @@ on:
       - unstable
     tags:
       - '[0-9]+\.[0-9]+\.[0-9]+'
+    paths:
+      - 'app/**'
 
 jobs:
   build:
