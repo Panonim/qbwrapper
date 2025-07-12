@@ -82,8 +82,8 @@ You **must** provide these in a `.env` file or your environment:
         {{ $downloaded := $t.Int "downloaded" }}
         {{ $size := $t.Int "size" }}
         {{ $eta := $t.Int "eta" }}
-        {{ $category := "radarr" }}
-        {{ if $t.Exists "category" }}
+        {{ $category := "None" }}
+        {{ if and ($t.Exists "category") (ne ($t.String "category") "") }}
           {{ $category = $t.String "category" }}
         {{ end }}
         {{ $numLeechs := 0 }}
