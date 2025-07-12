@@ -17,6 +17,7 @@ services:
     ports:
       - "9911:9911"
     environment:
+      TZ: Set/Me
       USERNAME: ${QB_USERNAME}
       PASSWORD: ${QB_PASSWORD}
       BASE_URL: ${QB_URL}
