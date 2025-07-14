@@ -9,6 +9,7 @@ import (
         "net/http/cookiejar"
         "net/url"
         "os"
+        "strconv"
         "strings"
         "sync"
         "time"
@@ -27,6 +28,10 @@ var (
         loginAttempts    int
         loginBlockedUntil time.Time
         loginMutex       sync.Mutex
+        rateLimitRequests  int
+        rateLimitMutex     sync.Mutex
+        rateLimitWindow    time.Time
+        rateLimitPerMinute int
 )
 
 type TorrentInfo struct {
@@ -45,6 +50,48 @@ func debugLog(format string, args ...interface{}) {
         if debug {
                 log.Printf("[DEBUG] "+format, args...)
         }
+}
+
+func initRateLimit() {
+        rateLimitStr := os.Getenv("RATE_LIMIT")
+        if rateLimitStr == "" {
+                rateLimitPerMinute = 10 // Default rate limit
+        } else {
+                limit, err := strconv.Atoi(rateLimitStr)
+                if err != nil {
+                        log.Printf("Invalid RATE_LIMIT value '%s', using default 10", rateLimitStr)
+                        rateLimitPerMinute = 10
+                } else {
+                        rateLimitPerMinute = limit
+                }
+        }
+        
+        rateLimitWindow = time.Now().Add(time.Minute)
+        rateLimitRequests = 0
+        
+        log.Printf("Rate limit initialized: %d requests per minute", rateLimitPerMinute)
+}
+
+func checkRateLimit() bool {
+        rateLimitMutex.Lock()
+        defer rateLimitMutex.Unlock()
+        
+        now := time.Now()
+        if now.After(rateLimitWindow) {
+                rateLimitRequests = 0
+                rateLimitWindow = now.Add(time.Minute)
+                debugLog("Rate limit window reset")
+        }
+
+        if rateLimitRequests >= rateLimitPerMinute {
+                remainingTime := time.Until(rateLimitWindow)
+                debugLog("Rate limit exceeded, remaining time: %v", remainingTime.Round(time.Second))
+                return false
+        }
+        
+        rateLimitRequests++
+        debugLog("Rate limit check passed, request %d/%d", rateLimitRequests, rateLimitPerMinute)
+        return true
 }
 
 func login() error {
@@ -187,9 +234,44 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
         }
 }
 
+func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+                if !checkRateLimit() {
+                        rateLimitMutex.Lock()
+                        remainingTime := time.Until(rateLimitWindow)
+                        rateLimitMutex.Unlock()
+                        
+                        w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rateLimitPerMinute))
+                        w.Header().Set("X-RateLimit-Remaining", "0")
+                        w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(rateLimitWindow.Unix(), 10))
+                        w.Header().Set("Retry-After", strconv.FormatInt(int64(remainingTime.Seconds()), 10))
+                        
+                        http.Error(w, fmt.Sprintf("Rate limit exceeded. Try again in %v", remainingTime.Round(time.Second)), http.StatusTooManyRequests)
+                        return
+                }
+                rateLimitMutex.Lock()
+                remaining := rateLimitPerMinute - rateLimitRequests
+                if remaining < 0 {
+                        remaining = 0
+                }
+                rateLimitMutex.Unlock()
+                
+                w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rateLimitPerMinute))
+                w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+                w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(rateLimitWindow.Unix(), 10))
+                
+                next(w, r)
+        }
+}
+
 func torrentsHandler(w http.ResponseWriter, r *http.Request) {
+        now := time.Now()
+        
         cacheMutex.RLock()
-        if time.Now().Before(cacheExpiry) && cache != nil {
+        if now.Before(cacheExpiry) && cache != nil {
+                debugLog("Serving torrents from cache (expires at %v, %v remaining)", 
+                        cacheExpiry.Format("15:04:05"), 
+                        time.Until(cacheExpiry).Round(time.Second))
                 json.NewEncoder(w).Encode(cache)
                 cacheMutex.RUnlock()
                 return
@@ -199,19 +281,33 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
         cacheMutex.Lock()
         defer cacheMutex.Unlock()
 
-        if time.Now().Before(cacheExpiry) && cache != nil {
+        if now.Before(cacheExpiry) && cache != nil {
+                debugLog("Serving torrents from cache (double-check, expires at %v, %v remaining)", 
+                        cacheExpiry.Format("15:04:05"), 
+                        time.Until(cacheExpiry).Round(time.Second))
                 json.NewEncoder(w).Encode(cache)
                 return
         }
 
+        if cache == nil {
+                debugLog("Cache is empty, fetching fresh data from qBittorrent API")
+        } else {
+                debugLog("Cache expired at %v, fetching fresh data from qBittorrent API", cacheExpiry.Format("15:04:05"))
+        }
+
         torrents, err := fetchTorrents()
         if err != nil {
+                debugLog("Failed to fetch torrents from API: %v", err)
                 http.Error(w, "Failed to fetch torrents: "+err.Error(), http.StatusBadGateway)
                 return
         }
 
         cache = torrents
         cacheExpiry = time.Now().Add(5 * time.Minute)
+        
+        debugLog("Successfully fetched %d torrents from API, cached until %v", 
+                len(torrents), 
+                cacheExpiry.Format("15:04:05"))
 
         w.Header().Set("Content-Type", "application/json")
         json.NewEncoder(w).Encode(cache)
@@ -265,6 +361,7 @@ func main() {
         if baseURL == "" || username == "" || password == "" || authToken == "" {
                 log.Fatal("Missing required environment variables")
         }
+        initRateLimit()
 
         if err := login(); err != nil {
                 log.Fatalf("Initial login failed: %v", err)
@@ -274,8 +371,7 @@ func main() {
         if port == "" {
                 port = "9911"
         }
-
-        http.HandleFunc("/qb/torrents", authMiddleware(torrentsHandler))
+        http.HandleFunc("/qb/torrents", authMiddleware(rateLimitMiddleware(torrentsHandler)))
         log.Printf("Listening on :%s\n", port)
         log.Fatal(http.ListenAndServe(":"+port, nil))
 }
