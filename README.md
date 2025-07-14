@@ -65,15 +65,29 @@ You **must** provide these in a `.env` file or your environment:
     {{ else }}
       {{ range $t := $torrents }}
         {{ $state := $t.String "state" }}
+        {{ $downloaded := $t.Int "downloaded" }}
+        {{ $size := $t.Int "size" }}
         {{ $icon := "❔" }}
-        {{ if or (eq $state "downloading") (eq $state "forcedDL") }}{{ $icon = "⬇️" }}{{ end }}
-        {{ if or (eq $state "uploading") (eq $state "forcedUP") }}{{ $icon = "⬆️" }}{{ end }}
-        {{ if or (eq $state "pausedDL") (eq $state "stoppedDL") (eq $state "pausedUP") (eq $state "stalledDL") (eq $state "stalledUP") (eq $state "queuedDL") (eq $state "queuedUP") }}{{ $icon = "⏸️" }}{{ end }}
-        {{ if or (eq $state "error") (eq $state "missingFiles") }}{{ $icon = "❗" }}{{ end }}
-        {{ if eq $state "checkingDL" }}{{ $icon = "🔍" }}{{ end }}
-        {{ if eq $state "checkingUP" }}{{ $icon = "🔎" }}{{ end }}
-        {{ if eq $state "allocating" }}{{ $icon = "⚙️" }}{{ end }}
-        {{ if eq $state "checkingResumeData" }}{{ $icon = "♻️" }}{{ end }}
+
+        {{ if ge $downloaded $size }}
+          {{ $icon = "✅" }}
+        {{ else if or (eq $state "downloading") (eq $state "forcedDL") }}
+          {{ $icon = "⬇️" }}
+        {{ else if or (eq $state "uploading") (eq $state "forcedUP") }}
+          {{ $icon = "⬆️" }}
+        {{ else if or (eq $state "pausedDL") (eq $state "stoppedDL") (eq $state "pausedUP") (eq $state "stalledDL") (eq $state "stalledUP") (eq $state "queuedDL") (eq $state "queuedUP") }}
+          {{ $icon = "⏸️" }}
+        {{ else if or (eq $state "error") (eq $state "missingFiles") }}
+          {{ $icon = "❗" }}
+        {{ else if eq $state "checkingDL" }}
+          {{ $icon = "🔍" }}
+        {{ else if eq $state "checkingUP" }}
+          {{ $icon = "🔎" }}
+        {{ else if eq $state "allocating" }}
+          {{ $icon = "⚙️" }}
+        {{ else if eq $state "checkingResumeData" }}
+          {{ $icon = "♻️" }}
+        {{ end }}
         {{ $name := $t.String "name" }}
         {{ $shortName := $name }}
         {{ if gt (len $name) 20 }}
