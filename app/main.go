@@ -13,6 +13,7 @@ import (
         "strings"
         "sync"
         "time"
+        "path/filepath"
 )
 
 var (
@@ -351,6 +352,32 @@ func toFloat(i interface{}) float64 {
         return 0
 }
 
+func cleanOldLogs(logDir string, retentionDays int) {
+        if retentionDays == 0 {
+                log.Println("LOG_RETENTION_DAYS=0; purging all logs")
+        } else {
+                log.Printf("Cleaning logs older than %d days in %s\n", retentionDays, logDir)
+        }
+
+        now := time.Now()
+        _ = filepath.Walk(logDir, func(path string, info os.FileInfo, err error) error {
+                if err != nil || info.IsDir() {
+                        return nil
+                }
+
+                if !strings.HasSuffix(info.Name(), ".log") {
+                        return nil
+                }
+
+                age := now.Sub(info.ModTime())
+                if retentionDays == 0 || age > (time.Duration(retentionDays)*24*time.Hour) {
+                        log.Printf("Removing old log: %s (age: %v)", path, age.Round(time.Second))
+                        os.Remove(path)
+                }
+                return nil
+        })
+}
+
 func main() {
         baseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
         username = os.Getenv("USERNAME")
@@ -361,6 +388,22 @@ func main() {
         if baseURL == "" || username == "" || password == "" || authToken == "" {
                 log.Fatal("Missing required environment variables")
         }
+
+        logDir := os.Getenv("LOG_DIR")
+        if logDir == "" {
+                logDir = "./logs"
+        }
+
+        retention := 3
+        if val := os.Getenv("LOG_RETENTION_DAYS"); val != "" {
+                if parsed, err := strconv.Atoi(val); err == nil && parsed >= 0 {
+                        retention = parsed
+                } else {
+                        log.Printf("Invalid LOG_RETENTION_DAYS: %s, defaulting to %d", val, retention)
+                }
+        }
+
+        cleanOldLogs(logDir, retention)
         initRateLimit()
 
         if err := login(); err != nil {
