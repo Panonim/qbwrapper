@@ -23,8 +23,9 @@ services:
       BASE_URL: ${QB_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
       LISTEN_PORT: "9911"
-      RATE_LIMIT: "10"  # API requests per minute (default: 10)
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs # Optional
 ```
 `.env`
 ```env
@@ -32,6 +33,13 @@ QB_USERNAME=
 QB_PASSWORD=
 QB_URL=http://IP:PORT
 AUTH_TOKEN=REPLACEME
+```
+`Optional Environment Variables`
+```yaml
+RATE_LIMIT: "10"          # API requests per minute (default: 10)
+LOG_RETENTION_DAYS: 3     # 0 for purge-on-restart
+LOG_DIR: /app/logs        # Where docker should save your logs
+DEBUG: true               # Logs level
 ```
 
 ## Environment Variables
