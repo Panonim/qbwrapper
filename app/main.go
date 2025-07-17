@@ -385,13 +385,26 @@ func main() {
         authToken = os.Getenv("AUTH_TOKEN")
         debug = os.Getenv("DEBUG") == "true"
 
-        if baseURL == "" || username == "" || password == "" || authToken == "" {
-                log.Fatal("Missing required environment variables")
-        }
-
         logDir := os.Getenv("LOG_DIR")
         if logDir == "" {
                 logDir = "./logs"
+        }
+        if err := os.MkdirAll(logDir, 0755); err != nil {
+                fmt.Printf("Failed to create log directory: %v\n", err)
+                os.Exit(1)
+        }
+
+        logFileName := filepath.Join(logDir, "app-"+time.Now().Format("2006-01-02_15-04-05")+".log")
+        logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+        if err != nil {
+                fmt.Printf("Failed to open log file: %v\n", err)
+                os.Exit(1)
+        }
+
+        log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+
+        if baseURL == "" || username == "" || password == "" || authToken == "" {
+                log.Fatal("Missing required environment variables")
         }
 
         retention := 3
@@ -414,6 +427,7 @@ func main() {
         if port == "" {
                 port = "9911"
         }
+
         http.HandleFunc("/qb/torrents", authMiddleware(rateLimitMiddleware(torrentsHandler)))
         log.Printf("Listening on :%s\n", port)
         log.Fatal(http.ListenAndServe(":"+port, nil))
