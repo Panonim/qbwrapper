@@ -57,7 +57,7 @@ You **must** provide these in a `.env` file or your environment:
   title: qBittorrent
   cache: 15m
   options:
-    always-show-stats: false 
+    always-show-stats: true 
   subrequests:
     info:
       url: "http://${QBW_URL}/qb/torrents"
@@ -191,4 +191,3 @@ Each torrent object includes:
 * The cache is locked for concurrency safety.
 * If the qBittorrent login fails, the app exits.
 * If you hit the endpoint without a valid token, you get a 401 Unauthorized.
-* The app uses standard Go HTTP server and `github.com/joho/godotenv` for env loading.
