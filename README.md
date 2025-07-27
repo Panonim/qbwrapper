@@ -22,9 +22,9 @@ services:
       PASSWORD: ${QB_PASSWORD}
       BASE_URL: ${QB_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
-      LISTEN_PORT: "9911"
-      RATE_LIMIT: "10"  # API requests per minute (default: 10)
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs # Optional
 ```
 `.env`
 ```env
@@ -32,6 +32,14 @@ QB_USERNAME=
 QB_PASSWORD=
 QB_URL=http://IP:PORT
 AUTH_TOKEN=REPLACEME
+```
+`Optional Environment Variables`
+```yaml
+RATE_LIMIT: "10"          # API requests per minute (default: 10)
+LOG_RETENTION_DAYS: 3     # 0 for purge-on-restart
+LOG_DIR: /app/logs        # Where docker should save your logs
+DEBUG: true               # Logs level
+LISTEN_PORT: "9911".      # Port on which qBW should listen internally
 ```
 
 ## Environment Variables
@@ -41,7 +49,7 @@ You **must** provide these in a `.env` file or your environment:
 * `QB_URL` — base URL of your qBittorrent Web UI (e.g., `http://localhost:8080`)
 * `QB_USERNAME` — your qBittorrent username
 * `QB_PASSWORD` — your qBittorrent password
-* `AUTH_TOKEN` — Bearer token required to access the `/qb/torrents` endpoint
+* `AUTH_TOKEN` — This is not a qBittorrent token. It’s a bearer token used by qBWrapper to control access (like a password) to the /qb/torrents endpoint.
 
 ## Glance
 ```yaml
@@ -49,13 +57,13 @@ You **must** provide these in a `.env` file or your environment:
   title: qBittorrent
   cache: 15m
   options:
-    always-show-stats: false 
+    always-show-stats: true 
   subrequests:
     info:
-      url: "http://${QB_URL}/qb/torrents"
+      url: "http://${QBW_URL}/qb/torrents"
       method: GET
       headers:
-        Authorization: "Bearer ${AUTH_TOKEN}"  # your token
+        Authorization: "Bearer ${AUTH_TOKEN}"  # your QBW token
   template: |
     {{ $info := .Subrequest "info" }}
     {{ $torrents := $info.JSON.Array "" }}
@@ -161,8 +169,8 @@ You **must** provide these in a `.env` file or your environment:
 
 ### Glance env
 You can put this app in the same place as glance and the same .env file, but in case you are using it alone please put this in your `.env`.
-* `QB_URL` — base URL of your qBittorrent Web UI (e.g., `http://localhost:8080`)
-* `AUTH_TOKEN` — Bearer token required to access the `/qb/torrents` endpoin
+* `QBW_URL` — base URL of your qBittorrent Wrapper (e.g., `http://localhost:9911`)
+* `AUTH_TOKEN` — This is not a qBittorrent token. It’s a bearer token used by qBWrapper to control access (like a password) to the /qb/torrents endpoint.
 
 ## What you get in the response
 
@@ -183,4 +191,3 @@ Each torrent object includes:
 * The cache is locked for concurrency safety.
 * If the qBittorrent login fails, the app exits.
 * If you hit the endpoint without a valid token, you get a 401 Unauthorized.
-* The app uses standard Go HTTP server and `github.com/joho/godotenv` for env loading.
