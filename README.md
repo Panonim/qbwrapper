@@ -49,7 +49,7 @@ You **must** provide these in a `.env` file or your environment:
 * `QB_URL` — base URL of your qBittorrent Web UI (e.g., `http://localhost:8080`)
 * `QB_USERNAME` — your qBittorrent username
 * `QB_PASSWORD` — your qBittorrent password
-* `AUTH_TOKEN` — Bearer token required to access the `/qb/torrents` endpoint
+* `AUTH_TOKEN` — This is not a qBittorrent token. It’s a bearer token used by qBWrapper to control access (like a password) to the /qb/torrents endpoint.
 
 ## Glance
 ```yaml
@@ -60,10 +60,10 @@ You **must** provide these in a `.env` file or your environment:
     always-show-stats: false 
   subrequests:
     info:
-      url: "http://${QB_URL}/qb/torrents"
+      url: "http://${QBW_URL}/qb/torrents"
       method: GET
       headers:
-        Authorization: "Bearer ${AUTH_TOKEN}"  # your token
+        Authorization: "Bearer ${AUTH_TOKEN}"  # your QBW token
   template: |
     {{ $info := .Subrequest "info" }}
     {{ $torrents := $info.JSON.Array "" }}
@@ -169,8 +169,8 @@ You **must** provide these in a `.env` file or your environment:
 
 ### Glance env
 You can put this app in the same place as glance and the same .env file, but in case you are using it alone please put this in your `.env`.
-* `QB_URL` — base URL of your qBittorrent Web UI (e.g., `http://localhost:8080`)
-* `AUTH_TOKEN` — Bearer token required to access the `/qb/torrents` endpoin
+* `QBW_URL` — base URL of your qBittorrent Wrapper (e.g., `http://localhost:9911`)
+* `AUTH_TOKEN` — This is not a qBittorrent token. It’s a bearer token used by qBWrapper to control access (like a password) to the /qb/torrents endpoint.
 
 ## What you get in the response
 
