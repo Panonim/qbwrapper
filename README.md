@@ -22,7 +22,6 @@ services:
       PASSWORD: ${QB_PASSWORD}
       BASE_URL: ${QB_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
-      LISTEN_PORT: "9911"
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs # Optional
@@ -40,6 +39,7 @@ RATE_LIMIT: "10"          # API requests per minute (default: 10)
 LOG_RETENTION_DAYS: 3     # 0 for purge-on-restart
 LOG_DIR: /app/logs        # Where docker should save your logs
 DEBUG: true               # Logs level
+LISTEN_PORT: "9911".      # Port on which qBW should listen internally
 ```
 
 ## Environment Variables
