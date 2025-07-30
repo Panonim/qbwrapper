@@ -58,6 +58,8 @@ You **must** provide these in a `.env` file or your environment:
   cache: 15m
   options:
     always-show-stats: true 
+    hide-completed: false
+    hide-inactive: false  # Hide torrents that aren't in downloading state
   subrequests:
     info:
       url: "http://${QBW_URL}/qb/torrents"
@@ -68,6 +70,9 @@ You **must** provide these in a `.env` file or your environment:
     {{ $info := .Subrequest "info" }}
     {{ $torrents := $info.JSON.Array "" }}
     {{ $alwaysShowStats := .Options.BoolOr "always-show-stats" false }}
+    {{ $hideCompleted := .Options.BoolOr "hide-completed" false }}
+    {{ $hideInactive := .Options.BoolOr "hide-inactive" false }}
+
     {{ if eq (len $torrents) 0 }}
       <div>No torrents found.</div>
     {{ else }}
@@ -75,8 +80,15 @@ You **must** provide these in a `.env` file or your environment:
         {{ $state := $t.String "state" }}
         {{ $downloaded := $t.Int "downloaded" }}
         {{ $size := $t.Int "size" }}
-        {{ $icon := "❔" }}
 
+        {{ if and $hideCompleted (ge $downloaded $size) }}
+          {{ continue }}
+        {{ end }}
+        {{ if and $hideInactive (not (or (eq $state "downloading") (eq $state "forcedDL") (eq $state "uploading") (eq $state "forcedUP"))) }}
+          {{ continue }}
+        {{ end }}
+
+        {{ $icon := "❔" }}
         {{ if ge $downloaded $size }}
           {{ $icon = "✅" }}
         {{ else if or (eq $state "downloading") (eq $state "forcedDL") }}
@@ -96,14 +108,13 @@ You **must** provide these in a `.env` file or your environment:
         {{ else if eq $state "checkingResumeData" }}
           {{ $icon = "♻️" }}
         {{ end }}
+
         {{ $name := $t.String "name" }}
         {{ $shortName := $name }}
         {{ if gt (len $name) 20 }}
           {{ $shortName = printf "%s..." (slice $name 0 20) }}
         {{ end }}
         {{ $progress := mul ($t.Float "progress") 100 }}
-        {{ $downloaded := $t.Int "downloaded" }}
-        {{ $size := $t.Int "size" }}
         {{ $fmtDownloaded := "" }}
         {{ $fmtSize := "" }}
         {{ if gt $size 1073741824 }}
