@@ -39,7 +39,7 @@ RATE_LIMIT: "10"          # API requests per minute (default: 10)
 LOG_RETENTION_DAYS: 3     # 0 for purge-on-restart
 LOG_DIR: /app/logs        # Where docker should save your logs
 DEBUG: true               # Logs level
-LISTEN_PORT: "9911".      # Port on which qBW should listen internally
+LISTEN_PORT: "9911"       # Port on which qBW should listen internally
 CACHE_DURATION: 5         # In minutes, set to 0 to disable cache
 ```
 
