@@ -33,6 +33,7 @@ var (
         rateLimitMutex     sync.Mutex
         rateLimitWindow    time.Time
         rateLimitPerMinute int
+        cacheDurationMinutes int
 )
 
 type TorrentInfo struct {
@@ -282,7 +283,7 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
         cacheMutex.Lock()
         defer cacheMutex.Unlock()
 
-        if now.Before(cacheExpiry) && cache != nil {
+        if cacheDurationMinutes > 0 && now.Before(cacheExpiry) && cache != nil {
                 debugLog("Serving torrents from cache (double-check, expires at %v, %v remaining)", 
                         cacheExpiry.Format("15:04:05"), 
                         time.Until(cacheExpiry).Round(time.Second))
@@ -304,7 +305,11 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
         }
 
         cache = torrents
-        cacheExpiry = time.Now().Add(5 * time.Minute)
+        if cacheDurationMinutes > 0 {
+                cacheExpiry = time.Now().Add(time.Duration(cacheDurationMinutes) * time.Minute)
+        } else {
+                cacheExpiry = time.Time{}
+        }
         
         debugLog("Successfully fetched %d torrents from API, cached until %v", 
                 len(torrents), 
@@ -378,7 +383,7 @@ func cleanOldLogs(logDir string, retentionDays int) {
         })
 }
 
-func main() {
+func main() {        
         baseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
         username = os.Getenv("USERNAME")
         password = os.Getenv("PASSWORD")
@@ -399,6 +404,16 @@ func main() {
         if err != nil {
                 fmt.Printf("Failed to open log file: %v\n", err)
                 os.Exit(1)
+        }
+
+        cacheDurationMinutes = 5
+        if val := os.Getenv("CACHE_DURATION"); val != "" {
+                if parsed, err := strconv.Atoi(val); err == nil && parsed >= 0 {
+                        cacheDurationMinutes = parsed
+                        log.Printf("CACHE_DURATION set to %d minute(s)", cacheDurationMinutes)
+                } else {
+                        log.Printf("Invalid CACHE_DURATION: %s, using default of 5 minutes", val)
+                }
         }
 
         log.SetOutput(io.MultiWriter(os.Stdout, logFile))
