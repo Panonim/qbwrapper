@@ -53,6 +53,10 @@ You **must** provide these in a `.env` file or your environment:
 * `AUTH_TOKEN` — This is not a qBittorrent token. It’s a bearer token used by qBWrapper to control access (like a password) to the /qb/torrents endpoint.
 
 ## Glance
+
+<details>
+  <summary>Click to expand</summary>
+  
 ```yaml
 - type: custom-api
   title: qBittorrent
@@ -173,6 +177,8 @@ You **must** provide these in a `.env` file or your environment:
       {{ end }}
     {{ end }}
 ```
+
+</details>
 
 <p>
   <img src="./static/preview_1.png" width="300" style="margin-right: 10px;"/>
