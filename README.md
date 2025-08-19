@@ -119,7 +119,7 @@ You **must** provide these in a `.env` file or your environment:
         {{ if gt (len $name) 20 }}
           {{ $shortName = printf "%s..." (slice $name 0 20) }}
         {{ end }}
-        {{ $progress := mul ($t.Float "progress") 100 }}
+
         {{ $fmtDownloaded := "" }}
         {{ $fmtSize := "" }}
         {{ if gt $size 1073741824 }}
@@ -129,6 +129,7 @@ You **must** provide these in a `.env` file or your environment:
           {{ $fmtDownloaded = printf "%.2f MB" (div (toFloat $downloaded) 1048576) }}
           {{ $fmtSize = printf "%.2f MB" (div (toFloat $size) 1048576) }}
         {{ end }}
+
         {{ $eta := $t.Int "eta" }}
         {{ $etaStr := "" }}
         {{ if gt $eta 0 }}
@@ -140,34 +141,47 @@ You **must** provide these in a `.env` file or your environment:
         {{ else }}
           {{ $etaStr = "∞" }}
         {{ end }}
+
         {{ $category := "None" }}
         {{ if and ($t.Exists "category") (ne ($t.String "category") "") }}
           {{ $category = $t.String "category" }}
         {{ end }}
+
         {{ $numLeechs := 0 }}
         {{ if $t.Exists "num_leechs" }}
           {{ $numLeechs = $t.Int "num_leechs" }}
         {{ end }}
+
         {{ $numSeeds := 0 }}
         {{ if $t.Exists "num_seeds" }}
           {{ $numSeeds = $t.Int "num_seeds" }}
         {{ end }}
-        <div>
-          <h2 style="font-size: 1.2em;">{{ $icon }} {{ $shortName }}</h2>
+
+        <div style="margin-bottom: 12px;">
+          <h2 style="font-size: 1.2em; margin-bottom: 4px;">{{ $icon }} {{ $shortName }}</h2>
+          <div style="width: 100%; height: 8px; background: #23262F; border-radius: 5px; overflow: hidden;">
+            <div style="
+              width: {{ $progress }}%;
+              height: 100%;
+              background: linear-gradient(90deg, #70a1ff, #ff6b6b);
+            "></div>
+          </div>
+          <div style="font-size: 0.85em; margin-top: 2px; text-align: right;">
+            {{ printf "%.1f%%" $progress }}
+          </div>
           {{ if $alwaysShowStats }}
             <hr/>
-            <div>
-              <div>Progress: {{ printf "%.1f%%" $progress }}</div>
+            <div style="margin-top: 4px;">
               <div>Downloaded: {{ $fmtDownloaded }} / {{ $fmtSize }}</div>
               <div>Category: {{ $category }}</div>
               <div>Leechs: {{ $numLeechs }}, Seeds: {{ $numSeeds }}</div>
               <div>ETA: {{ $etaStr }}</div>
+              <div>Download Speed: {{ printf "%.2f MB/s" (div (toFloat $speed) 1048576) }}</div>
             </div>
           {{ else }}
-            <details>
+            <details style="margin-top: 4px;">
               <summary>Show Stats</summary>
-              <div>Progress: {{ printf "%.1f%%" $progress }}</div>
-              <div>Downloaded: {{ $fmtDownloaded }} GB / {{ $fmtSize }} GB</div>
+              <div>Downloaded: {{ $fmtDownloaded }} / {{ $fmtSize }}</div>
               <div>Category: {{ $category }}</div>
               <div>Leechs: {{ $numLeechs }}, Seeds: {{ $numSeeds }}</div>
               <div>ETA: {{ $etaStr }}</div>
