@@ -64,13 +64,13 @@ You **must** provide these in a `.env` file or your environment:
   options:
     always-show-stats: true 
     hide-completed: false
-    hide-inactive: false  # Hide torrents that aren't in downloading state
+    hide-inactive: false
   subrequests:
     info:
       url: "http://${QBW_URL}/qb/torrents"
       method: GET
       headers:
-        Authorization: "Bearer ${AUTH_TOKEN}"  # your QBW token
+        Authorization: "Bearer ${AUTH_TOKEN}"
   template: |
     {{ $info := .Subrequest "info" }}
     {{ $torrents := $info.JSON.Array "" }}
@@ -85,6 +85,7 @@ You **must** provide these in a `.env` file or your environment:
         {{ $state := $t.String "state" }}
         {{ $downloaded := $t.Int "downloaded" }}
         {{ $size := $t.Int "size" }}
+        {{ $speed := $t.Int "dlspeed" }}
 
         {{ if and $hideCompleted (ge $downloaded $size) }}
           {{ continue }}
@@ -93,25 +94,21 @@ You **must** provide these in a `.env` file or your environment:
           {{ continue }}
         {{ end }}
 
-        {{ $icon := "❔" }}
+        {{ $icon := "?" }}
         {{ if ge $downloaded $size }}
-          {{ $icon = "✅" }}
+          {{ $icon = "✔" }}
         {{ else if or (eq $state "downloading") (eq $state "forcedDL") }}
-          {{ $icon = "⬇️" }}
+          {{ $icon = "↓" }}
         {{ else if or (eq $state "uploading") (eq $state "forcedUP") }}
-          {{ $icon = "⬆️" }}
+          {{ $icon = "↑" }}
         {{ else if or (eq $state "pausedDL") (eq $state "stoppedDL") (eq $state "pausedUP") (eq $state "stalledDL") (eq $state "stalledUP") (eq $state "queuedDL") (eq $state "queuedUP") }}
-          {{ $icon = "⏸️" }}
+          {{ $icon = "❚❚" }}
         {{ else if or (eq $state "error") (eq $state "missingFiles") }}
-          {{ $icon = "❗" }}
-        {{ else if eq $state "checkingDL" }}
-          {{ $icon = "🔍" }}
-        {{ else if eq $state "checkingUP" }}
-          {{ $icon = "🔎" }}
-        {{ else if eq $state "allocating" }}
-          {{ $icon = "⚙️" }}
+          {{ $icon = "!" }}
+        {{ else if or (eq $state "checkingDL") (eq $state "checkingUP") (eq $state "allocating") }}
+          {{ $icon = "…" }}
         {{ else if eq $state "checkingResumeData" }}
-          {{ $icon = "♻️" }}
+          {{ $icon = "⟳" }}
         {{ end }}
 
         {{ $name := $t.String "name" }}
@@ -128,6 +125,11 @@ You **must** provide these in a `.env` file or your environment:
         {{ else }}
           {{ $fmtDownloaded = printf "%.2f MB" (div (toFloat $downloaded) 1048576) }}
           {{ $fmtSize = printf "%.2f MB" (div (toFloat $size) 1048576) }}
+        {{ end }}
+
+        {{ $progress := 0 }}
+        {{ if gt $size 0 }}
+          {{ $progress = mul (div (toFloat $downloaded) (toFloat $size)) 100 }}
         {{ end }}
 
         {{ $eta := $t.Int "eta" }}
@@ -159,16 +161,20 @@ You **must** provide these in a `.env` file or your environment:
 
         <div style="margin-bottom: 12px;">
           <h2 style="font-size: 1.2em; margin-bottom: 4px;">{{ $icon }} {{ $shortName }}</h2>
-          <div style="width: 100%; height: 8px; background: #23262F; border-radius: 5px; overflow: hidden;">
+          <div style="width: 100%; height: 8px; background: #23262F; border-radius: 5px; overflow: hidden; position: relative;">
             <div style="
               width: {{ $progress }}%;
               height: 100%;
               background: linear-gradient(90deg, #70a1ff, #ff6b6b);
             "></div>
+            <div style="position: absolute; top: 100%; left: 0; font-size: 0.75em; margin-top: 2px;">
+              {{ $fmtDownloaded }} / {{ $fmtSize }}
+            </div>
+            <div style="position: absolute; top: 100%; right: 0; font-size: 0.75em; margin-top: 2px;">
+              {{ printf "%.1f%%" $progress }}
+            </div>
           </div>
-          <div style="font-size: 0.85em; margin-top: 2px; text-align: right;">
-            {{ printf "%.1f%%" $progress }}
-          </div>
+
           {{ if $alwaysShowStats }}
             <hr/>
             <div style="margin-top: 4px;">
