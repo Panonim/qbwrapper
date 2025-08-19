@@ -62,7 +62,6 @@ You **must** provide these in a `.env` file or your environment:
   title: qBittorrent
   cache: 15m
   options:
-    always-show-stats: true 
     hide-completed: false
     hide-inactive: false
   subrequests:
@@ -74,7 +73,6 @@ You **must** provide these in a `.env` file or your environment:
   template: |
     {{ $info := .Subrequest "info" }}
     {{ $torrents := $info.JSON.Array "" }}
-    {{ $alwaysShowStats := .Options.BoolOr "always-show-stats" false }}
     {{ $hideCompleted := .Options.BoolOr "hide-completed" false }}
     {{ $hideInactive := .Options.BoolOr "hide-inactive" false }}
 
@@ -144,55 +142,15 @@ You **must** provide these in a `.env` file or your environment:
           {{ $etaStr = "∞" }}
         {{ end }}
 
-        {{ $category := "None" }}
-        {{ if and ($t.Exists "category") (ne ($t.String "category") "") }}
-          {{ $category = $t.String "category" }}
-        {{ end }}
-
-        {{ $numLeechs := 0 }}
-        {{ if $t.Exists "num_leechs" }}
-          {{ $numLeechs = $t.Int "num_leechs" }}
-        {{ end }}
-
-        {{ $numSeeds := 0 }}
-        {{ if $t.Exists "num_seeds" }}
-          {{ $numSeeds = $t.Int "num_seeds" }}
-        {{ end }}
-
         <div style="margin-bottom: 12px;">
           <h2 style="font-size: 1.2em; margin-bottom: 4px;">{{ $icon }} {{ $shortName }}</h2>
-          <div style="width: 100%; height: 8px; background: #23262F; border-radius: 5px; overflow: hidden; position: relative;">
-            <div style="
-              width: {{ $progress }}%;
-              height: 100%;
-              background: linear-gradient(90deg, #70a1ff, #ff6b6b);
-            "></div>
-            <div style="position: absolute; top: 100%; left: 0; font-size: 0.75em; margin-top: 2px;">
-              {{ $fmtDownloaded }} / {{ $fmtSize }}
-            </div>
-            <div style="position: absolute; top: 100%; right: 0; font-size: 0.75em; margin-top: 2px;">
-              {{ printf "%.1f%%" $progress }}
+          <div style="width: 100%; height: 20px; background: #23262F; border-radius: 5px; overflow: hidden; position: relative; font-size: 0.8em; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; box-sizing: border-box;">
+            <div style="width: {{ $progress }}%; height: 100%; background: linear-gradient(90deg, #70a1ff, #ff6b6b); position: absolute; top: 0; left: 0;"></div>
+            <div style="position: relative; z-index: 1; width: 100%; display: flex; justify-content: space-between;">
+              <span>{{ $fmtDownloaded }} / {{ $fmtSize }}</span>
+              <span>{{ $etaStr }}</span>
             </div>
           </div>
-
-          {{ if $alwaysShowStats }}
-            <hr/>
-            <div style="margin-top: 4px;">
-              <div>Downloaded: {{ $fmtDownloaded }} / {{ $fmtSize }}</div>
-              <div>Category: {{ $category }}</div>
-              <div>Leechs: {{ $numLeechs }}, Seeds: {{ $numSeeds }}</div>
-              <div>ETA: {{ $etaStr }}</div>
-              <div>Download Speed: {{ printf "%.2f MB/s" (div (toFloat $speed) 1048576) }}</div>
-            </div>
-          {{ else }}
-            <details style="margin-top: 4px;">
-              <summary>Show Stats</summary>
-              <div>Downloaded: {{ $fmtDownloaded }} / {{ $fmtSize }}</div>
-              <div>Category: {{ $category }}</div>
-              <div>Leechs: {{ $numLeechs }}, Seeds: {{ $numSeeds }}</div>
-              <div>ETA: {{ $etaStr }}</div>
-            </details>
-          {{ end }}
         </div>
       {{ end }}
     {{ end }}
