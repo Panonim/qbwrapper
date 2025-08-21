@@ -9,7 +9,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,20 +60,20 @@ func debugLog(format string, args ...interface{}) {
 	}
 }
 
+// -------------------- Rate Limiting --------------------
+
 func initRateLimit() {
 	rateLimitStr := os.Getenv("RATE_LIMIT")
 	if rateLimitStr == "" {
 		rateLimitPerMinute = 10
 	} else {
-		limit, err := strconv.Atoi(rateLimitStr)
-		if err != nil {
+		if limit, err := strconv.Atoi(rateLimitStr); err != nil {
 			log.Printf("Invalid RATE_LIMIT value '%s', using default 10", rateLimitStr)
 			rateLimitPerMinute = 10
 		} else {
 			rateLimitPerMinute = limit
 		}
 	}
-
 	rateLimitWindow = time.Now().Add(time.Minute)
 	rateLimitRequests = 0
 	log.Printf("Rate limit initialized: %d requests per minute", rateLimitPerMinute)
@@ -92,8 +91,7 @@ func checkRateLimit() bool {
 	}
 
 	if rateLimitRequests >= rateLimitPerMinute {
-		remainingTime := time.Until(rateLimitWindow)
-		debugLog("Rate limit exceeded, remaining time: %v", remainingTime.Round(time.Second))
+		debugLog("Rate limit exceeded")
 		return false
 	}
 
@@ -102,6 +100,14 @@ func checkRateLimit() bool {
 	return true
 }
 
+func getRateLimitRemaining() time.Duration {
+	rateLimitMutex.Lock()
+	defer rateLimitMutex.Unlock()
+	return time.Until(rateLimitWindow)
+}
+
+// -------------------- Login --------------------
+
 func login() error {
 	loginMutex.Lock()
 	defer loginMutex.Unlock()
@@ -109,9 +115,9 @@ func login() error {
 	debugLog("Login attempt started, current attempts: %d", loginAttempts)
 
 	if time.Now().Before(loginBlockedUntil) {
-		remainingTime := time.Until(loginBlockedUntil)
-		debugLog("Login blocked, remaining time: %v", remainingTime.Round(time.Minute))
-		return fmt.Errorf("login blocked for %v due to repeated failures", remainingTime.Round(time.Minute))
+		remaining := time.Until(loginBlockedUntil)
+		debugLog("Login blocked for %v", remaining.Round(time.Minute))
+		return fmt.Errorf("login blocked for %v due to repeated failures", remaining.Round(time.Minute))
 	}
 
 	jar, _ := cookiejar.New(nil)
@@ -123,7 +129,6 @@ func login() error {
 
 	loginURL := strings.TrimRight(baseURL, "/") + "/api/v2/auth/login"
 	debugLog("Attempting login to: %s", loginURL)
-	debugLog("Login user: %s", username)
 
 	resp, err := client.PostForm(loginURL, form)
 	if err != nil {
@@ -131,8 +136,7 @@ func login() error {
 		debugLog("Login network error, attempt %d/3: %v", loginAttempts, err)
 		if loginAttempts >= 3 {
 			loginBlockedUntil = time.Now().Add(30 * time.Minute)
-			debugLog("Maximum login attempts reached, blocking until: %v", loginBlockedUntil)
-			log.Printf("Login failed %d times, blocking for 30 minutes until %v", loginAttempts, loginBlockedUntil)
+			log.Printf("Login failed 3 times, blocking for 30 minutes until %v", loginBlockedUntil)
 			loginAttempts = 0
 			return fmt.Errorf("login blocked for 30 minutes due to repeated failures")
 		}
@@ -141,29 +145,26 @@ func login() error {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	debugLog("Login response status: %s", resp.Status)
-	debugLog("Login response body: %s", string(body))
+	debugLog("Login response: %s", strings.TrimSpace(string(body)))
 
-	if string(body) != "Ok." {
+	if strings.TrimSpace(string(body)) != "Ok." {
 		loginAttempts++
-		debugLog("Login authentication failed, attempt %d/3: %s", loginAttempts, string(body))
+		debugLog("Login authentication failed, attempt %d/3", loginAttempts)
 		if loginAttempts >= 3 {
 			loginBlockedUntil = time.Now().Add(30 * time.Minute)
-			debugLog("Maximum login attempts reached, blocking until: %v", loginBlockedUntil)
-			log.Printf("Login failed %d times, blocking for 30 minutes until %v", loginAttempts, loginBlockedUntil)
+			log.Printf("Login failed 3 times, blocking for 30 minutes until %v", loginBlockedUntil)
 			loginAttempts = 0
 			return fmt.Errorf("login blocked for 30 minutes due to repeated failures")
 		}
-		return fmt.Errorf("login failed, response: %s", body)
+		return fmt.Errorf("login failed, response: %s", string(body))
 	}
 
-	if loginAttempts > 0 {
-		debugLog("Login successful, resetting attempt counter from %d to 0", loginAttempts)
-	}
 	loginAttempts = 0
 	log.Println("qBittorrent login successful")
 	return nil
 }
+
+// -------------------- Fetch Torrents --------------------
 
 var errUnauthorized = fmt.Errorf("unauthorized")
 
@@ -196,15 +197,16 @@ func fetchTorrentsOnce() (TorrentSummary, error) {
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return TorrentSummary{}, errUnauthorized
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		debugLog("Non-OK response body: %s", string(body))
+		debugLog("Non-OK response: %s", string(body))
 		return TorrentSummary{}, fmt.Errorf("failed to fetch torrents, status: %s", resp.Status)
 	}
 
 	var fullTorrents []map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&fullTorrents); err != nil {
-		return TorrentSummary{}, err
+		return TorrentSummary{}, fmt.Errorf("failed decoding torrents JSON: %w", err)
 	}
 
 	return summarizeTorrents(fullTorrents), nil
@@ -230,10 +232,7 @@ func summarizeTorrents(fullTorrents []map[string]interface{}) TorrentSummary {
 		}
 
 		torrents = append(torrents, ti)
-
-		if s, ok := t["dlspeed"].(float64); ok {
-			totalSpeed += s
-		}
+		totalSpeed += toFloat(t["dlspeed"])
 
 		switch ti.State {
 		case "uploading", "forcedUP", "stoppedUP":
@@ -251,13 +250,12 @@ func summarizeTorrents(fullTorrents []map[string]interface{}) TorrentSummary {
 	}
 }
 
+// -------------------- Middleware --------------------
+
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		debugLog("Received Authorization token: %s", token)
-
 		if token != authToken {
-			debugLog("Authorization failed")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -268,15 +266,11 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !checkRateLimit() {
-			rateLimitMutex.Lock()
-			remainingTime := time.Until(rateLimitWindow)
-			rateLimitMutex.Unlock()
-
+			remainingTime := getRateLimitRemaining()
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rateLimitPerMinute))
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(rateLimitWindow.Unix(), 10))
 			w.Header().Set("Retry-After", strconv.FormatInt(int64(remainingTime.Seconds()), 10))
-
 			http.Error(w, fmt.Sprintf("Rate limit exceeded. Try again in %v seconds", int64(remainingTime.Seconds())), http.StatusTooManyRequests)
 			return
 		}
@@ -284,10 +278,12 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// -------------------- Handlers --------------------
+
 func torrentsHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	cacheMutex.RLock()
-	if now.Before(cacheExpiry) && cache.Torrents != nil {
+	if now.Before(cacheExpiry) && len(cache.Torrents) > 0 {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(cache)
 		cacheMutex.RUnlock()
@@ -313,7 +309,8 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(cache)
 }
 
-// Helper conversion functions
+// -------------------- Helpers --------------------
+
 func toString(v interface{}) string {
 	if v == nil {
 		return ""
@@ -365,6 +362,8 @@ func toFloat(v interface{}) float64 {
 	}
 }
 
+// -------------------- Main --------------------
+
 func main() {
 	baseURL = os.Getenv("QBIT_URL")
 	username = os.Getenv("QBIT_USERNAME")
@@ -372,14 +371,11 @@ func main() {
 	authToken = os.Getenv("API_TOKEN")
 	debug = os.Getenv("DEBUG") == "1"
 
+	cacheDurationMinutes = 1
 	if cd := os.Getenv("CACHE_DURATION"); cd != "" {
 		if d, err := strconv.Atoi(cd); err == nil {
 			cacheDurationMinutes = d
-		} else {
-			cacheDurationMinutes = 1
 		}
-	} else {
-		cacheDurationMinutes = 1
 	}
 
 	if err := login(); err != nil {
