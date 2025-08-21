@@ -1,4 +1,4 @@
-# qBittorrent API Proxy
+# qBWrapper
 
 This Go app acts as a lightweight proxy API for qBittorrent. It logs into your qBittorrent Web UI, fetches torrent info, caches it, and exposes a simple authenticated HTTP endpoint to get torrent data in JSON format.
 
@@ -196,23 +196,3 @@ You **must** provide these in a `.env` file or your environment:
 You can put this app in the same place as glance and the same .env file, but in case you are using it alone please put this in your `.env`.
 * `QBW_URL` — base URL of your qBittorrent Wrapper (e.g., `http://localhost:9911`)
 * `AUTH_TOKEN` — This is not a qBittorrent token. It’s a bearer token used by qBWrapper to control access (like a password) to the /qb/torrents endpoint.
-
-## What you get in the response
-
-Each torrent object includes:
-
-* `name`: Torrent name
-* `category`: Assigned category in qBittorrent
-* `num_leechs`: Number of leechers
-* `num_seeds`: Number of seeders
-* `progress`: Download progress (0 to 1)
-* `state`: Torrent state (e.g., downloading, paused)
-* `size`: Total size in bytes
-* `downloaded`: Bytes downloaded so far
-* `eta`: Estimated time remaining in seconds
-
-## Notes
-
-* The cache is locked for concurrency safety.
-* If the qBittorrent login fails, the app exits.
-* If you hit the endpoint without a valid token, you get a 401 Unauthorized.
