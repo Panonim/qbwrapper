@@ -5,20 +5,17 @@ WORKDIR /app
 
 RUN apk --no-cache add git
 
-COPY go.mod main.go ./
+COPY . .
 RUN go mod tidy
-
 RUN CGO_ENABLED=0 GOOS=linux go build -o app main.go
 
 # Final stage
 FROM alpine:latest
 
 WORKDIR /app
-
 RUN apk --no-cache add tzdata
 
-COPY --from=builder /app/app .
+COPY --from=builder /app/app . 
 
 EXPOSE 9911
-
 CMD ["./app"]
