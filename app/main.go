@@ -365,10 +365,10 @@ func toFloat(v interface{}) float64 {
 // -------------------- Main --------------------
 
 func main() {
-	baseURL = os.Getenv("QBIT_URL")
-	username = os.Getenv("QBIT_USERNAME")
-	password = os.Getenv("QBIT_PASSWORD")
-	authToken = os.Getenv("API_TOKEN")
+    baseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
+    username = os.Getenv("USERNAME")
+    password = os.Getenv("PASSWORD")
+    authToken = os.Getenv("AUTH_TOKEN")
 	debug = os.Getenv("DEBUG") == "1"
 
 	cacheDurationMinutes = 1
