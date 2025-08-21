@@ -1,14 +1,24 @@
-# Builder
-FROM golang:1.21-bullseye AS builder
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod tidy
-COPY . .
-RUN go build -o app ./...
+# Build stage
+FROM golang:1.21-alpine AS builder
 
-# Final
-FROM debian:bullseye-slim
 WORKDIR /app
+
+RUN apk --no-cache add git
+
+COPY go.mod main.go ./
+RUN go mod tidy
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o app main.go
+
+# Final stage
+FROM alpine:latest
+
+WORKDIR /app
+
+RUN apk --no-cache add tzdata
+
 COPY --from=builder /app/app .
+
 EXPOSE 9911
+
 CMD ["./app"]
