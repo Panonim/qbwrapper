@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +21,8 @@ import (
 var (
 	client               *http.Client
 	baseURL              string
+	loginURL             string // Pre-computed login URL
+	torrentsURL          string // Pre-computed torrents URL
 	username             string
 	password             string
 	authToken            string
@@ -108,33 +112,6 @@ func initRateLimit() {
 	log.Printf("Rate limit initialized: %d requests per minute", rateLimitPerMinute)
 }
 
-func checkRateLimit() bool {
-	rateLimitMutex.Lock()
-	defer rateLimitMutex.Unlock()
-
-	now := time.Now()
-	if now.After(rateLimitWindow) {
-		rateLimitRequests = 0
-		rateLimitWindow = now.Add(time.Minute)
-		debugLog("Rate limit window reset")
-	}
-
-	if rateLimitRequests >= rateLimitPerMinute {
-		debugLog("Rate limit exceeded")
-		return false
-	}
-
-	rateLimitRequests++
-	debugLog("Rate limit check passed, request %d/%d", rateLimitRequests, rateLimitPerMinute)
-	return true
-}
-
-func getRateLimitRemaining() time.Duration {
-	rateLimitMutex.Lock()
-	defer rateLimitMutex.Unlock()
-	return time.Until(rateLimitWindow)
-}
-
 // -------------------- Login --------------------
 
 func login() error {
@@ -150,17 +127,35 @@ func login() error {
 	}
 
 	jar, _ := cookiejar.New(nil)
-	client = &http.Client{Jar: jar}
+	client = &http.Client{
+		Jar: jar,
+	}
 
 	form := url.Values{}
 	form.Add("username", username)
 	form.Add("password", password)
 
-	loginURL := strings.TrimRight(baseURL, "/") + "/api/v2/auth/login"
 	debugLog("Attempting login to: %s", loginURL)
 	debugLog("Login user: %s", username)
 
-	resp, err := client.PostForm(loginURL, form)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", loginURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		loginAttempts++
+		debugLog("Login request creation error, attempt %d/3: %v", loginAttempts, err)
+		if loginAttempts >= 3 {
+			loginBlockedUntil = time.Now().Add(30 * time.Minute)
+			log.Printf("Login failed 3 times, blocking for 30 minutes until %v", loginBlockedUntil)
+			loginAttempts = 0
+			return fmt.Errorf("login blocked for 30 minutes due to repeated failures")
+		}
+		return fmt.Errorf("login failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		loginAttempts++
 		debugLog("Login network error, attempt %d/3: %v", loginAttempts, err)
@@ -215,7 +210,10 @@ func fetchTorrents() (TorrentSummary, error) {
 }
 
 func fetchTorrentsOnce() (TorrentSummary, error) {
-	req, err := http.NewRequest("GET", baseURL+"/api/v2/torrents/info", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", torrentsURL, nil)
 	if err != nil {
 		return TorrentSummary{}, err
 	}
@@ -302,21 +300,35 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !checkRateLimit() {
-			remainingTime := getRateLimitRemaining()
+		rateLimitMutex.Lock()
+		now := time.Now()
+
+		// Reset window if needed
+		if now.After(rateLimitWindow) {
+			rateLimitRequests = 0
+			rateLimitWindow = now.Add(time.Minute)
+			debugLog("Rate limit window reset")
+		}
+
+		// Check limit
+		if rateLimitRequests >= rateLimitPerMinute {
+			remainingTime := time.Until(rateLimitWindow)
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rateLimitPerMinute))
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(rateLimitWindow.Unix(), 10))
 			w.Header().Set("Retry-After", strconv.FormatInt(int64(remainingTime.Seconds()), 10))
+			rateLimitMutex.Unlock()
+			debugLog("Rate limit exceeded")
 			http.Error(w, fmt.Sprintf("Rate limit exceeded. Try again in %v", remainingTime.Round(time.Second)), http.StatusTooManyRequests)
 			return
 		}
 
-		rateLimitMutex.Lock()
+		rateLimitRequests++
 		remaining := rateLimitPerMinute - rateLimitRequests
 		if remaining < 0 {
 			remaining = 0
 		}
+		debugLog("Rate limit check passed, request %d/%d", rateLimitRequests, rateLimitPerMinute)
 		rateLimitMutex.Unlock()
 
 		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rateLimitPerMinute))
@@ -331,29 +343,46 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func torrentsHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	
+
+	// Fast path: check cache with read lock
 	cacheMutex.RLock()
 	if now.Before(cacheExpiry) && len(cache.Torrents) > 0 {
-		debugLog("Serving torrents from cache (expires at %v, %v remaining)", 
-			cacheExpiry.Format("15:04:05"), 
+		debugLog("Serving torrents from cache (expires at %v, %v remaining)",
+			cacheExpiry.Format("15:04:05"),
 			time.Until(cacheExpiry).Round(time.Second))
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cache)
+
+		// Encode to buffer for efficiency
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(cache); err != nil {
+			cacheMutex.RUnlock()
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
 		cacheMutex.RUnlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(buf.Bytes())
 		return
 	}
 	cacheMutex.RUnlock()
 
+	// Slow path: fetch new data with write lock
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 
-	// Double-check after acquiring write lock
+	// Double-check pattern: another goroutine might have updated the cache
 	if now.Before(cacheExpiry) && len(cache.Torrents) > 0 {
-		debugLog("Serving torrents from cache (double-check, expires at %v, %v remaining)", 
-			cacheExpiry.Format("15:04:05"), 
+		debugLog("Serving torrents from cache (double-check, expires at %v, %v remaining)",
+			cacheExpiry.Format("15:04:05"),
 			time.Until(cacheExpiry).Round(time.Second))
+
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(cache); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cache)
+		w.Write(buf.Bytes())
 		return
 	}
 
@@ -375,12 +404,17 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
 		cacheExpiry = now.Add(time.Duration(cacheDurationMinutes) * time.Minute)
 	}
 
-	debugLog("Successfully fetched %d torrents from API, cached until %v", 
-		len(torrents.Torrents), 
+	debugLog("Successfully fetched %d torrents from API, cached until %v",
+		len(torrents.Torrents),
 		cacheExpiry.Format("15:04:05"))
 
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(cache); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cache)
+	w.Write(buf.Bytes())
 }
 
 // -------------------- Helpers --------------------
@@ -388,6 +422,9 @@ func torrentsHandler(w http.ResponseWriter, r *http.Request) {
 func toString(v interface{}) string {
 	if v == nil {
 		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
 	}
 	return fmt.Sprintf("%v", v)
 }
@@ -398,6 +435,8 @@ func toInt(v interface{}) int {
 		return int(val)
 	case int:
 		return val
+	case int64:
+		return int(val)
 	case string:
 		i, _ := strconv.Atoi(val)
 		return i
@@ -428,6 +467,8 @@ func toFloat(v interface{}) float64 {
 		return val
 	case int:
 		return float64(val)
+	case int64:
+		return float64(val)
 	case string:
 		f, _ := strconv.ParseFloat(val, 64)
 		return f
@@ -444,6 +485,15 @@ func main() {
 	password = os.Getenv("PASSWORD")
 	authToken = os.Getenv("AUTH_TOKEN")
 	debug = os.Getenv("DEBUG") == "true" || os.Getenv("DEBUG") == "1"
+
+	// Validate required environment variables
+	if baseURL == "" || username == "" || password == "" || authToken == "" {
+		log.Fatal("Missing required environment variables: BASE_URL, USERNAME, PASSWORD, AUTH_TOKEN")
+	}
+
+	// Pre-compute URLs to avoid repeated string operations
+	loginURL = baseURL + "/api/v2/auth/login"
+	torrentsURL = baseURL + "/api/v2/torrents/info"
 
 	// Set up logging
 	logDir := os.Getenv("LOG_DIR")
@@ -463,11 +513,6 @@ func main() {
 	}
 
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
-
-	// Validate required environment variables
-	if baseURL == "" || username == "" || password == "" || authToken == "" {
-		log.Fatal("Missing required environment variables: BASE_URL, USERNAME, PASSWORD, AUTH_TOKEN")
-	}
 
 	// Set cache duration
 	cacheDurationMinutes = 1
