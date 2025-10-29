@@ -269,7 +269,7 @@ func summarizeTorrents(fullTorrents []map[string]interface{}) TorrentSummary {
 		totalSpeed += toFloat(t["dlspeed"])
 
 		switch ti.State {
-		case "uploading", "forcedUP", "stoppedUP":
+		case "uploading", "forcedUP", "stoppedUP", "stalledUP":
 			seeding++
 		case "downloading", "forcedDL":
 			leeching++
