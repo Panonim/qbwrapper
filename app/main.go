@@ -128,8 +128,7 @@ func login() error {
 
 	jar, _ := cookiejar.New(nil)
 	client = &http.Client{
-		Jar:     jar,
-		Timeout: 30 * time.Second,
+		Jar: jar,
 	}
 
 	form := url.Values{}
@@ -326,6 +325,9 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		rateLimitRequests++
 		remaining := rateLimitPerMinute - rateLimitRequests
+		if remaining < 0 {
+			remaining = 0
+		}
 		debugLog("Rate limit check passed, request %d/%d", rateLimitRequests, rateLimitPerMinute)
 		rateLimitMutex.Unlock()
 
