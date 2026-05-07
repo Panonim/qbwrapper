@@ -2,7 +2,7 @@
 
 This Go app acts as a lightweight proxy API for qBittorrent. It logs into your qBittorrent Web UI, fetches torrent info, caches it, and exposes a simple authenticated HTTP endpoint to get torrent data in JSON format.
 
-> Note: Dynacat has this widget already integrated. Learn more here: https://github.com/Panonim/dynacat
+> Note: Dynacat has this widget already integrated. Learn more here: https://dynacat.artur.zone/#configuration/torrenting
 
 <p>
   <img alt="GitHub Tag" src="https://img.shields.io/github/v/tag/panonim/qbwrapper?style=for-the-badge">
