@@ -173,7 +173,7 @@ func login() error {
 	debugLog("Login response status: %s", resp.Status)
 	debugLog("Login response body: %s", strings.TrimSpace(string(body)))
 
-	if strings.TrimSpace(string(body)) != "Ok." {
+	if !loginSuccessful(resp, body) {
 		loginAttempts++
 		debugLog("Login authentication failed, attempt %d/3", loginAttempts)
 		if loginAttempts >= 3 {
@@ -191,6 +191,24 @@ func login() error {
 	loginAttempts = 0
 	log.Println("qBittorrent login successful")
 	return nil
+}
+
+func loginSuccessful(resp *http.Response, body []byte) bool {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return false
+	}
+
+	if strings.TrimSpace(string(body)) == "Ok." {
+		return true
+	}
+
+	for _, cookie := range resp.Cookies() {
+		if strings.EqualFold(cookie.Name, "SID") && cookie.Value != "" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // -------------------- Fetch Torrents --------------------
