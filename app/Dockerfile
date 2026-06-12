@@ -13,6 +13,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o app main.go
 # Final stage
 FROM alpine:latest
 
+LABEL org.opencontainers.image.source=https://github.com/Panonim/qbwrapper
+LABEL org.opencontainers.image.description="qBittorrent wrapper service"
+
 WORKDIR /app
 
 RUN apk --no-cache add tzdata
